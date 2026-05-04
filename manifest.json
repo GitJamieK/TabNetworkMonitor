@@ -1,0 +1,27 @@
+{
+  "manifest_version": 2,
+  "name": "Tab Network Monitor",
+  "version": "0.2.1",
+  "description": "Shows live estimated network usage per Firefox tab.",
+  "permissions": [
+    "tabs",
+    "webRequest",
+    "webRequestBlocking",
+    "<all_urls>"
+  ],
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "browser_action": {
+    "default_title": "Tab Network Monitor",
+    "default_popup": "popup.html"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "tab-network-monitor@jamiek.cc",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
+    }
+  }
+}
