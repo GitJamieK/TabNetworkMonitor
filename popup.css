@@ -2,11 +2,17 @@ body {
     width: 410px;
     max-height: 560px;
     margin: 0;
-    padding: 8px;
+    padding: 8px 8px 14px;
     font-family: system-ui, sans-serif;
     background: #111;
     color: #eee;
+    box-sizing: border-box;
     overflow-y: auto;
+}
+
+body.detached-window {
+    height: 100vh;
+    max-height: none;
 }
 
 .header {
@@ -22,15 +28,67 @@ h1 {
     margin: 0;
 }
 
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
 #summary {
-color: #7ee787;
-font-size: 12px;
-font-weight: 700;
+    color: #7ee787;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.pin-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    flex: 0 0 22px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    background: transparent;
+    color: #777;
+    cursor: pointer;
+}
+
+.pin-button:hover {
+    border-color: #333;
+    background: rgba(255, 255, 255, 0.06);
+    color: #ddd;
+}
+
+.pin-button.pinned {
+    border-color: rgba(126, 231, 135, 0.35);
+    background: rgba(126, 231, 135, 0.08);
+    color: #7ee787;
+}
+
+.pin-button:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+.pin-icon {
+    display: block;
+    font-size: 12px;
+    line-height: 1;
+    filter: grayscale(1);
+    opacity: 0.62;
+}
+
+.pin-button.pinned .pin-icon {
+    filter: none;
+    opacity: 1;
 }
 
 .tab-row {
     position: relative;
     display: flex;
+    align-items: flex-start;
     gap: 8px;
     padding: 7px 4px;
     border-bottom: 1px solid #2c2c2c;
@@ -40,40 +98,16 @@ font-weight: 700;
     background: rgba(126, 231, 135, 0.08);
 }
 
+.tab-row.pinned:not(.active) {
+    background: rgba(126, 231, 135, 0.035);
+}
+
 .tab-row:hover {
     background: rgba(255, 255, 255, 0.06);
 }
 
-.tab-row:hover::after {
-    content: attr(data-tooltip-title) "\A" attr(data-tooltip-url);
-    position: fixed;
-    left: 12px;
-    right: 12px;
-    bottom: 12px;
-    z-index: 9999;
-    white-space: pre-wrap;
-    word-break: break-all;
-    padding: 10px;
-    border: 1px solid #333;
-    border-radius: 6px;
-    background: #050505;
-    color: #eee;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
-    font-size: 12px;
-    line-height: 1.35;
-    pointer-events: none;
-}
-
-.tab-row:hover::before {
-    content: "";
-    position: fixed;
-    left: 22px;
-    bottom: 6px;
-    z-index: 10000;
-    border-width: 6px 6px 0 6px;
-    border-style: solid;
-    border-color: #333 transparent transparent transparent;
-    pointer-events: none;
+.tab-pin-button {
+    margin-top: 17px;
 }
 
 .tab-icon {
@@ -150,4 +184,29 @@ font-weight: 700;
     stroke-width: 2;
     stroke-linecap: round;
     stroke-linejoin: round;
+}
+
+.resize-handle {
+    position: fixed;
+    right: 2px;
+    bottom: 2px;
+    display: block;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    background:
+        linear-gradient(90deg, transparent 0 4px, #777 4px 14px, transparent 14px),
+        linear-gradient(90deg, transparent 0 6px, #777 6px 14px, transparent 14px),
+        linear-gradient(90deg, transparent 0 8px, #777 8px 14px, transparent 14px);
+    background-position: 0 5px, 0 9px, 0 13px;
+    background-repeat: no-repeat;
+    background-size: 18px 1px;
+    cursor: ns-resize;
+}
+
+.resize-handle:hover {
+    border-color: #333;
+    background-color: rgba(255, 255, 255, 0.06);
 }

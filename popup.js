@@ -1,6 +1,12 @@
 const api = globalThis.browser || globalThis.chrome;
 const HISTORY_LENGTH = 30;
+const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
+const POPUP_MIN_HEIGHT = 260;
+const POPUP_HEIGHT_STORAGE_KEY = "popupHeight";
 const usesPromiseApi = Boolean(globalThis.browser);
+const isDetachedWindow = new URLSearchParams(window.location.search).get("detached") === "1";
+let pinnedTabIds = new Set();
+let resizeState = null;
 
 function queryTabs(queryInfo) {
     if (usesPromiseApi) {
@@ -22,8 +28,16 @@ function queryTabs(queryInfo) {
 }
 
 function sendRuntimeMessage(message) {
+    const validateResponse = (response) => {
+        if (response?.error) {
+            throw new Error(response.error);
+        }
+
+        return response;
+    };
+
     if (usesPromiseApi) {
-        return api.runtime.sendMessage(message);
+        return api.runtime.sendMessage(message).then(validateResponse);
     }
 
     return new Promise((resolve, reject) => {
@@ -35,9 +49,246 @@ function sendRuntimeMessage(message) {
                 return;
             }
 
-            resolve(response);
+            try {
+                resolve(validateResponse(response));
+            } catch (responseError) {
+                reject(responseError);
+            }
         });
     });
+}
+
+function getCurrentWindow() {
+    if (usesPromiseApi) {
+        return api.windows.getCurrent();
+    }
+
+    return new Promise((resolve, reject) => {
+        api.windows.getCurrent((currentWindow) => {
+            const error = api.runtime.lastError;
+
+            if (error) {
+                reject(error);
+                return;
+            }
+
+            resolve(currentWindow);
+        });
+    });
+}
+
+function updateBrowserWindow(windowId, updateInfo) {
+    if (usesPromiseApi) {
+        return api.windows.update(windowId, updateInfo);
+    }
+
+    return new Promise((resolve, reject) => {
+        api.windows.update(windowId, updateInfo, (updatedWindow) => {
+            const error = api.runtime.lastError;
+
+            if (error) {
+                reject(error);
+                return;
+            }
+
+            resolve(updatedWindow);
+        });
+    });
+}
+
+function createPinIcon() {
+    const icon = document.createElement("span");
+    icon.className = "pin-icon";
+    icon.setAttribute("aria-hidden", "true");
+    icon.textContent = "📌";
+    return icon;
+}
+
+function getPinnedOrder() {
+    const pinnedOrder = new Map();
+    Array.from(pinnedTabIds).forEach((tabId, index) => {
+        pinnedOrder.set(tabId, index);
+    });
+
+    return pinnedOrder;
+}
+
+function isTabPinned(tabId) {
+    return pinnedTabIds.has(String(tabId));
+}
+
+function applyWindowPinState(button) {
+    button.classList.toggle("pinned", isDetachedWindow);
+    button.setAttribute(
+        "aria-label",
+        isDetachedWindow ? "Close pinned monitor window" : "Open pinned monitor window"
+    );
+    button.title = isDetachedWindow ? "Close pinned monitor window" : "Open pinned monitor window";
+}
+
+async function handleWindowPinClick(button) {
+    button.disabled = true;
+
+    try {
+        if (isDetachedWindow) {
+            sendRuntimeMessage({ type: "CLOSE_DETACHED_POPUP" }).catch(() => {
+                window.close();
+            });
+            window.close();
+            return;
+        }
+
+        await sendRuntimeMessage({
+            type: "OPEN_DETACHED_POPUP"
+        });
+        button.classList.add("pinned");
+    } finally {
+        button.disabled = false;
+    }
+}
+
+function setupWindowPinButton() {
+    const button = document.getElementById("window-pin");
+    if (!button) return;
+
+    button.replaceChildren(createPinIcon());
+    applyWindowPinState(button);
+    button.addEventListener("click", () => handleWindowPinClick(button));
+}
+
+function clampPopupHeight(height) {
+    const maxHeight = window.screen?.availHeight
+        ? window.screen.availHeight - window.screenY - 8
+        : Number.POSITIVE_INFINITY;
+
+    return Math.max(POPUP_MIN_HEIGHT, Math.min(Math.round(height), maxHeight));
+}
+
+function applyDocumentPopupHeight(height) {
+    const normalizedHeight = clampPopupHeight(height);
+    document.body.style.height = `${normalizedHeight}px`;
+    document.body.style.maxHeight = "none";
+    localStorage.setItem(POPUP_HEIGHT_STORAGE_KEY, String(normalizedHeight));
+}
+
+async function updateDetachedWindowHeight(height) {
+    if (!resizeState?.windowId) return;
+
+    await updateBrowserWindow(resizeState.windowId, {
+        height: clampPopupHeight(height)
+    });
+}
+
+function updatePopupHeight(height) {
+    if (resizeState?.mode === "detached") {
+        updateDetachedWindowHeight(height).catch(() => {
+            // Ignore transient resize errors while dragging.
+        });
+        return;
+    }
+
+    applyDocumentPopupHeight(height);
+}
+
+function schedulePopupResize(height) {
+    if (!resizeState) return;
+
+    resizeState.height = clampPopupHeight(height);
+
+    if (resizeState.frameRequested) return;
+
+    resizeState.frameRequested = true;
+
+    requestAnimationFrame(() => {
+        if (!resizeState) return;
+
+        resizeState.frameRequested = false;
+        updatePopupHeight(resizeState.height);
+    });
+}
+
+function finishPopupResize(handle) {
+    if (!resizeState) return;
+
+    const height = resizeState.height;
+    const mode = resizeState.mode;
+
+    try {
+        handle.releasePointerCapture(resizeState.pointerId);
+    } catch (error) {
+        // Ignore pointer capture cleanup errors.
+    }
+
+    resizeState = null;
+
+    if (height && mode === "detached") {
+        sendRuntimeMessage({
+            type: "SET_DETACHED_POPUP_HEIGHT",
+            height
+        }).catch(() => {
+            // Ignore persistence errors after the visual resize is complete.
+        });
+    }
+}
+
+function getInitialResizeHeight() {
+    if (isDetachedWindow) {
+        return window.outerHeight;
+    }
+
+    return document.body.getBoundingClientRect().height;
+}
+
+async function createResizeState(event) {
+    const state = {
+        mode: isDetachedWindow ? "detached" : "document",
+        pointerId: event.pointerId,
+        startY: event.screenY,
+        startHeight: getInitialResizeHeight(),
+        height: getInitialResizeHeight(),
+        windowId: null,
+        frameRequested: false
+    };
+
+    if (isDetachedWindow) {
+        const currentWindow = await getCurrentWindow();
+        state.windowId = currentWindow.id;
+    }
+
+    return state;
+}
+
+function setupResizeHandle() {
+    const handle = document.getElementById("resize-handle");
+    if (!handle) return;
+
+    handle.hidden = false;
+
+    handle.addEventListener("pointerdown", async (event) => {
+        event.preventDefault();
+        resizeState = await createResizeState(event);
+        handle.setPointerCapture(event.pointerId);
+    });
+
+    handle.addEventListener("pointermove", (event) => {
+        if (!resizeState || event.pointerId !== resizeState.pointerId) return;
+
+        const deltaY = event.screenY - resizeState.startY;
+        schedulePopupResize(resizeState.startHeight + deltaY);
+    });
+
+    handle.addEventListener("pointerup", () => finishPopupResize(handle));
+    handle.addEventListener("pointercancel", () => finishPopupResize(handle));
+}
+
+function restoreDocumentPopupHeight() {
+    if (isDetachedWindow) return;
+
+    const storedHeight = Number.parseInt(localStorage.getItem(POPUP_HEIGHT_STORAGE_KEY), 10);
+
+    if (Number.isFinite(storedHeight)) {
+        applyDocumentPopupHeight(storedHeight);
+    }
 }
 
 function formatBytes(bytes) {
@@ -45,8 +296,9 @@ function formatBytes(bytes) {
 
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
 
-    return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+    return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }
 
 function formatSpeed(bytesPerSecond) {
@@ -95,21 +347,19 @@ function createGraph(history) {
     })
     .join(" ");
 
-    const svgNamespace = "http://www.w3.org/2000/svg";
-
-    const svg = document.createElementNS(svgNamespace, "svg");
+    const svg = document.createElementNS(SVG_NAMESPACE, "svg");
     svg.classList.add("network-graph");
     svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
     svg.setAttribute("preserveAspectRatio", "none");
 
-    const baseline = document.createElementNS(svgNamespace, "line");
+    const baseline = document.createElementNS(SVG_NAMESPACE, "line");
     baseline.classList.add("graph-baseline");
     baseline.setAttribute("x1", "0");
     baseline.setAttribute("y1", String(height - 1));
     baseline.setAttribute("x2", String(width));
     baseline.setAttribute("y2", String(height - 1));
 
-    const line = document.createElementNS(svgNamespace, "polyline");
+    const line = document.createElementNS(SVG_NAMESPACE, "polyline");
     line.classList.add("graph-line");
     line.setAttribute("points", graphPoints);
 
@@ -156,6 +406,36 @@ function createUsageText(tabStat) {
     return usage;
 }
 
+function createTabPinButton(tab) {
+    const pinned = isTabPinned(tab.id);
+    const button = document.createElement("button");
+    button.className = "pin-button tab-pin-button";
+    button.type = "button";
+    button.classList.toggle("pinned", pinned);
+    button.setAttribute("aria-label", pinned ? "Unpin tab from top" : "Pin tab to top");
+    button.title = pinned ? "Unpin tab from top" : "Pin tab to top";
+    button.append(createPinIcon());
+
+    button.addEventListener("click", async (event) => {
+        event.stopPropagation();
+        button.disabled = true;
+
+        try {
+            const response = await sendRuntimeMessage({
+                type: "TOGGLE_TAB_PIN",
+                tabId: tab.id
+            });
+
+            pinnedTabIds = new Set((response?.pinnedTabIds || []).map(String));
+            await updatePopup();
+        } finally {
+            button.disabled = false;
+        }
+    });
+
+    return button;
+}
+
 function createTabRow(tab, tabStat) {
     const row = document.createElement("div");
     row.className = "tab-row";
@@ -164,11 +444,12 @@ function createTabRow(tab, tabStat) {
         row.classList.add("active");
     }
 
+    if (isTabPinned(tab.id)) {
+        row.classList.add("pinned");
+    }
+
     const title = tab.title || "Untitled tab";
     const url = tab.url || "";
-
-    row.setAttribute("data-tooltip-title", title);
-    row.setAttribute("data-tooltip-url", url);
 
     const tabContent = document.createElement("div");
     tabContent.className = "tab-content";
@@ -183,13 +464,16 @@ function createTabRow(tab, tabStat) {
         usageRow
     );
 
-    row.append(createTabIcon(tab), tabContent);
+    row.append(createTabIcon(tab), tabContent, createTabPinButton(tab));
     return row;
 }
 
 async function updatePopup() {
     const tabs = await queryTabs({});
-    const stats = await sendRuntimeMessage({ type: "GET_TAB_STATS" });
+    const popupState = await sendRuntimeMessage({ type: "GET_POPUP_STATE" });
+    const stats = popupState?.stats || {};
+    pinnedTabIds = new Set((popupState?.pinnedTabIds || []).map(String));
+    const pinnedOrder = getPinnedOrder();
 
     const container = document.getElementById("tabs");
     const summary = document.getElementById("summary");
@@ -207,6 +491,19 @@ async function updatePopup() {
         };
     })
     .sort((a, b) => {
+        const aPinnedIndex = pinnedOrder.get(String(a.tab.id));
+        const bPinnedIndex = pinnedOrder.get(String(b.tab.id));
+        const aPinned = aPinnedIndex !== undefined;
+        const bPinned = bPinnedIndex !== undefined;
+
+        if (aPinned !== bPinned) {
+            return aPinned ? -1 : 1;
+        }
+
+        if (aPinned && bPinned && aPinnedIndex !== bPinnedIndex) {
+            return aPinnedIndex - bPinnedIndex;
+        }
+
         if (b.tabStat.speedBps !== a.tabStat.speedBps) {
             return b.tabStat.speedBps - a.tabStat.speedBps;
         }
@@ -219,5 +516,9 @@ async function updatePopup() {
     summary.textContent = formatSpeed(totalSpeed);
 }
 
+document.body.classList.toggle("detached-window", isDetachedWindow);
+restoreDocumentPopupHeight();
+setupWindowPinButton();
+setupResizeHandle();
 updatePopup();
 setInterval(updatePopup, 1000);

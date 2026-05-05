@@ -7,10 +7,14 @@
 <body>
   <div class="header">
     <h1>Tab Network</h1>
-    <span id="summary">0 KB/s</span>
+    <div class="header-actions">
+      <span id="summary">0 B/s</span>
+      <button id="window-pin" class="pin-button window-pin-button" type="button" aria-label="Open pinned monitor window"></button>
+    </div>
   </div>
 
   <div id="tabs"></div>
+  <button id="resize-handle" class="resize-handle" type="button" aria-label="Resize monitor height" hidden></button>
 
   <script src="popup.js"></script>
 </body>

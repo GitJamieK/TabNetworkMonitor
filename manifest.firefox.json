@@ -5,6 +5,7 @@
   "description": "Shows live estimated network usage per browser tab.",
   "permissions": [
     "tabs",
+    "storage",
     "webRequest",
     "webRequestBlocking",
     "webRequestFilterResponse"
