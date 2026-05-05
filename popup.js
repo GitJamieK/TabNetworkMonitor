@@ -1,3 +1,45 @@
+const api = globalThis.browser || globalThis.chrome;
+const HISTORY_LENGTH = 30;
+const usesPromiseApi = Boolean(globalThis.browser);
+
+function queryTabs(queryInfo) {
+    if (usesPromiseApi) {
+        return api.tabs.query(queryInfo);
+    }
+
+    return new Promise((resolve, reject) => {
+        api.tabs.query(queryInfo, (tabs) => {
+            const error = api.runtime.lastError;
+
+            if (error) {
+                reject(error);
+                return;
+            }
+
+            resolve(tabs);
+        });
+    });
+}
+
+function sendRuntimeMessage(message) {
+    if (usesPromiseApi) {
+        return api.runtime.sendMessage(message);
+    }
+
+    return new Promise((resolve, reject) => {
+        api.runtime.sendMessage(message, (response) => {
+            const error = api.runtime.lastError;
+
+            if (error) {
+                reject(error);
+                return;
+            }
+
+            resolve(response);
+        });
+    });
+}
+
 function formatBytes(bytes) {
     if (!bytes) return "0 B";
 
@@ -29,16 +71,16 @@ function getFallbackIcon(tab) {
 }
 
 function getTabStats(stats, tabId) {
-    return stats[String(tabId)] || {
+    return stats?.[String(tabId)] || {
         totalBytes: 0,
         requests: 0,
         speedBps: 0,
-        history: Array(30).fill(0)
+        history: Array(HISTORY_LENGTH).fill(0)
     };
 }
 
 function createGraph(history) {
-    const points = history && history.length > 0 ? history : Array(30).fill(0);
+    const points = history && history.length > 0 ? history : Array(HISTORY_LENGTH).fill(0);
     const maxValue = Math.max(...points, 1);
 
     const width = 150;
@@ -137,8 +179,8 @@ function createTabRow(tab, tabStat) {
 
     tabContent.append(
         createTextElement("title", title),
-                      createTextElement("url", url),
-                      usageRow
+        createTextElement("url", url),
+        usageRow
     );
 
     row.append(createTabIcon(tab), tabContent);
@@ -146,8 +188,8 @@ function createTabRow(tab, tabStat) {
 }
 
 async function updatePopup() {
-    const tabs = await browser.tabs.query({});
-    const stats = await browser.runtime.sendMessage({ type: "GET_TAB_STATS" });
+    const tabs = await queryTabs({});
+    const stats = await sendRuntimeMessage({ type: "GET_TAB_STATS" });
 
     const container = document.getElementById("tabs");
     const summary = document.getElementById("summary");

@@ -5,16 +5,26 @@
   "description": "Shows live estimated network usage per browser tab.",
   "permissions": [
     "tabs",
-    "webRequest"
+    "webRequest",
+    "webRequestBlocking",
+    "webRequestFilterResponse"
   ],
   "host_permissions": [
     "<all_urls>"
   ],
   "background": {
-    "service_worker": "background.js"
+    "scripts": ["background.js"]
   },
   "action": {
     "default_title": "Tab Network Monitor",
     "default_popup": "popup.html"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "tab-network-monitor@jamiek.cc",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
+    }
   }
 }
