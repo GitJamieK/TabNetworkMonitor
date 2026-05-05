@@ -1,15 +1,17 @@
 {
   "manifest_version": 3,
   "name": "Tab Network Monitor",
-  "version": "0.3.0",
+  "version": "0.5.0",
   "description": "Shows live estimated network usage per browser tab.",
   "permissions": [
+    "activeTab",
     "tabs",
     "storage",
     "webRequest"
   ],
-  "host_permissions": [
-    "<all_urls>"
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
   ],
   "background": {
     "service_worker": "background.js"

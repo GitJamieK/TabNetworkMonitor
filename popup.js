@@ -3,6 +3,7 @@ const HISTORY_LENGTH = 30;
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 const POPUP_MIN_HEIGHT = 260;
 const POPUP_HEIGHT_STORAGE_KEY = "popupHeight";
+const NETWORK_ORIGINS = ["http://*/*", "https://*/*"];
 const usesPromiseApi = Boolean(globalThis.browser);
 const isDetachedWindow = new URLSearchParams(window.location.search).get("detached") === "1";
 let pinnedTabIds = new Set();
@@ -96,6 +97,56 @@ function updateBrowserWindow(windowId, updateInfo) {
     });
 }
 
+function containsNetworkAccess() {
+    if (usesPromiseApi || !api.permissions?.contains) {
+        return Promise.resolve(true);
+    }
+
+    const permissions = { origins: NETWORK_ORIGINS };
+
+    if (usesPromiseApi) {
+        return api.permissions.contains(permissions);
+    }
+
+    return new Promise((resolve, reject) => {
+        api.permissions.contains(permissions, (hasAccess) => {
+            const error = api.runtime.lastError;
+
+            if (error) {
+                reject(error);
+                return;
+            }
+
+            resolve(hasAccess);
+        });
+    });
+}
+
+function requestNetworkAccess() {
+    if (usesPromiseApi || !api.permissions?.request) {
+        return Promise.resolve(true);
+    }
+
+    const permissions = { origins: NETWORK_ORIGINS };
+
+    if (usesPromiseApi) {
+        return api.permissions.request(permissions);
+    }
+
+    return new Promise((resolve, reject) => {
+        api.permissions.request(permissions, (granted) => {
+            const error = api.runtime.lastError;
+
+            if (error) {
+                reject(error);
+                return;
+            }
+
+            resolve(granted);
+        });
+    });
+}
+
 function createPinIcon() {
     const icon = document.createElement("span");
     icon.className = "pin-icon";
@@ -154,6 +205,40 @@ function setupWindowPinButton() {
     button.replaceChildren(createPinIcon());
     applyWindowPinState(button);
     button.addEventListener("click", () => handleWindowPinClick(button));
+}
+
+async function refreshAccessPanel() {
+    const panel = document.getElementById("access-panel");
+    if (!panel) return;
+
+    const hasAccess = await containsNetworkAccess();
+    panel.hidden = hasAccess;
+}
+
+function setupAccessPanel() {
+    const panel = document.getElementById("access-panel");
+    const button = document.getElementById("access-button");
+
+    if (!panel || !button) return;
+
+    refreshAccessPanel().catch(() => {
+        panel.hidden = true;
+    });
+
+    button.addEventListener("click", async () => {
+        button.disabled = true;
+
+        try {
+            const granted = await requestNetworkAccess();
+            panel.hidden = granted;
+
+            if (granted) {
+                await updatePopup();
+            }
+        } finally {
+            button.disabled = false;
+        }
+    });
 }
 
 function clampPopupHeight(height) {
@@ -518,6 +603,7 @@ async function updatePopup() {
 
 document.body.classList.toggle("detached-window", isDetachedWindow);
 restoreDocumentPopupHeight();
+setupAccessPanel();
 setupWindowPinButton();
 setupResizeHandle();
 updatePopup();

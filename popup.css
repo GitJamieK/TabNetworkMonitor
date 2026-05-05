@@ -85,6 +85,45 @@ h1 {
     opacity: 1;
 }
 
+.access-panel {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 8px 4px 4px;
+    padding: 7px 8px;
+    border: 1px solid #333;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.04);
+    color: #bbb;
+    font-size: 11px;
+}
+
+.access-panel[hidden] {
+    display: none;
+}
+
+.access-button {
+    flex: 0 0 auto;
+    padding: 3px 8px;
+    border: 1px solid rgba(126, 231, 135, 0.35);
+    border-radius: 4px;
+    background: rgba(126, 231, 135, 0.08);
+    color: #7ee787;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.access-button:hover {
+    background: rgba(126, 231, 135, 0.14);
+}
+
+.access-button:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
 .tab-row {
     position: relative;
     display: flex;

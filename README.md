@@ -6,7 +6,7 @@ Tab Network Monitor displays estimated live network activity for open browser ta
 
 The source uses shared popup and background code with browser-specific manifests:
 
-- `manifest.json` is the Chrome Manifest V3 package manifest.
+- `manifest.json` is the Chrome Manifest V3 package manifest. Chrome requests all-site monitoring access as an optional runtime permission to avoid required broad host permissions in the Web Store package.
 - `manifest.firefox.json` is the Firefox Manifest V3 package manifest.
 
 Build both upload zips with:
