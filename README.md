@@ -20,6 +20,6 @@ The build outputs are:
 - `dist/tab-network-monitor-chrome.zip`
 - `dist/tab-network-monitor-firefox.zip`
 
-Chrome MV3 does not expose Firefox's response body stream API. In Chrome, the extension estimates transferred bytes from `Content-Length` response headers when they are available. In Firefox, it uses `webRequest.filterResponseData()` for live response-byte counting and falls back to header estimates for requests that cannot be filtered.
+The extension estimates transferred bytes from `Content-Length` response headers when they are available. It does not intercept, modify, or stream response bodies, keeping the monitor lightweight and reducing the chance of affecting page loads.
 
 The toolbar popup still follows browser popup behavior and closes when it loses focus. Use the header pin button to open the same monitor in a detached extension window when you want it to stay open while browsing. The monitor can be resized vertically from its bottom-right handle in both toolbar-popup and detached-window modes.

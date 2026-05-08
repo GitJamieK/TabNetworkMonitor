@@ -3,8 +3,6 @@ const REQUEST_FILTER = { urls: ["http://*/*", "https://*/*"] };
 const api = globalThis.browser || globalThis.chrome;
 const usesPromiseApi = Boolean(globalThis.browser);
 const tabStats = {};
-const headerEstimateRequestIds = new Set();
-const canFilterResponseData = Boolean(api.webRequest.filterResponseData);
 const PINNED_TABS_STORAGE_KEY = "pinnedTabIds";
 const DETACHED_HEIGHT_STORAGE_KEY = "detachedPopupHeight";
 const DETACHED_POPUP_URL = api.runtime.getURL("popup.html?detached=1");
@@ -365,62 +363,23 @@ function getContentLength(responseHeaders) {
     return Number.isFinite(bytes) && bytes > 0 ? bytes : 0;
 }
 
-function trackResponseStream(details) {
-    try {
-        const filter = api.webRequest.filterResponseData(details.requestId);
-
-        filter.ondata = (event) => {
-            addBytes(details.tabId, event.data.byteLength);
-            filter.write(event.data);
-        };
-
-        filter.onstop = () => {
-            filter.close();
-        };
-
-        filter.onerror = () => {
-            try {
-                filter.disconnect();
-            } catch (error) {
-                // Ignore cleanup errors.
-            }
-        };
-
-        return true;
-    } catch (error) {
-        return false;
-    }
-}
-
 function handleBeforeRequest(details) {
     if (details.tabId < 0) return;
 
     const stats = ensureTab(details.tabId);
     stats.requests++;
-
-    if (canFilterResponseData && trackResponseStream(details)) {
-        return;
-    }
-
-    headerEstimateRequestIds.add(details.requestId);
 }
 
 function handleHeadersReceived(details) {
-    if (details.tabId < 0 || !headerEstimateRequestIds.has(details.requestId)) {
-        return;
-    }
+    if (details.tabId < 0) return;
 
     addBytes(details.tabId, getContentLength(details.responseHeaders));
-}
-
-function forgetRequest(details) {
-    headerEstimateRequestIds.delete(details.requestId);
 }
 
 api.webRequest.onBeforeRequest.addListener(
     handleBeforeRequest,
     REQUEST_FILTER,
-    canFilterResponseData ? ["blocking"] : []
+    []
 );
 
 api.webRequest.onHeadersReceived.addListener(
@@ -428,9 +387,6 @@ api.webRequest.onHeadersReceived.addListener(
     REQUEST_FILTER,
     ["responseHeaders"]
 );
-
-api.webRequest.onCompleted.addListener(forgetRequest, REQUEST_FILTER);
-api.webRequest.onErrorOccurred.addListener(forgetRequest, REQUEST_FILTER);
 
 api.tabs.onRemoved.addListener((tabId) => {
     delete tabStats[tabId];
